@@ -16,10 +16,16 @@ defmodule Server do
 
     {:ok, data } = :gen_tcp.recv(client, 0)
 
-      # data
-      # |> String.split("\r\n")
-    # |> IO.puts
-    :gen_tcp.send(client, "HTTP/1.1 200 OK\r\n\r\n")
+    String.split(data, "\r\n", parts: 2)
+    |> Enum.at(0)
+    |> String.split(" ")
+    |> Enum.at(1)
+    |> case do
+      "/" -> :gen_tcp.send(client, "HTTP/1.1 200 OK\r\n\r\n")
+      _ -> :gen_tcp.send(client, "HTTP/1.1 404 Not Found\r\n\r\n")
+    end
+
+    :gen_tcp.close(client)
   end
 end
 
