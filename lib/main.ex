@@ -16,16 +16,41 @@ defmodule Server do
 
     {:ok, data } = :gen_tcp.recv(client, 0)
 
-    String.split(data, "\r\n", parts: 2)
+    handle_request(data, client)
+    :gen_tcp.close(client)
+    :gen_tcp.close(socket)
+  end
+
+  def handle_request(data, client_socket) do
+   data_enum = String.split(data, "\r\n")
+
+     data_enum
+    |> Enum.at(0)
+    |> String.split(" ")
+    |> Enum.at(0)
+    |> case do
+      "GET" -> handle_GET_request(client_socket, data_enum)
+      _ -> :gen_tcp.send(client_socket, "HTTP/1.1 404 Not Found\r\n\r\n")
+    end
+  end
+
+  def handle_GET_request(socket, data_enum) do
+    route = data_enum
     |> Enum.at(0)
     |> String.split(" ")
     |> Enum.at(1)
-    |> case do
-      "/" -> :gen_tcp.send(client, "HTTP/1.1 200 OK\r\n\r\n")
-      _ -> :gen_tcp.send(client, "HTTP/1.1 404 Not Found\r\n\r\n")
-    end
 
-    :gen_tcp.close(client)
+    IO.puts(route)
+
+    if String.match?(route, ~r/echo/) do
+      echo_str = route |> String.split("/") |> Enum.at(2)
+      :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length:#{String.length(echo_str)}\r\n\r\n#{echo_str}")
+    else 
+      case route do
+       "/" -> :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nContent-Type: text/plain\r\n\r\n")
+        _ -> :gen_tcp.send(socket, "HTTP/1.1 404 Not Found\r\nContent-Length:0\r\nContent-Type: text/plain\r\n\r\n")
+      end
+    end
   end
 end
 
