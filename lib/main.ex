@@ -40,16 +40,24 @@ defmodule Server do
     |> String.split(" ")
     |> Enum.at(1)
 
-    IO.puts(route)
+    cond do
+       String.match?(route, ~r/echo/) ->
+          echo_str = route |> String.split("/") |> Enum.at(2)
+          :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length:#{String.length(echo_str)}\r\n\r\n#{echo_str}")
+       String.match?(route, ~r/User-Agent/i) ->
+          user_agent_str =
+           data_enum
+            |> Enum.slice(1..Enum.count(data_enum))
+            |> Enum.find(fn x -> String.match?(x, ~r/User-Agent/i) end)
+            |> String.split(":")
+            |> Enum.at(1)
+            |> String.trim
 
-    if String.match?(route, ~r/echo/) do
-      echo_str = route |> String.split("/") |> Enum.at(2)
-      :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length:#{String.length(echo_str)}\r\n\r\n#{echo_str}")
-    else 
-      case route do
-       "/" -> :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nContent-Type: text/plain\r\n\r\n")
-        _ -> :gen_tcp.send(socket, "HTTP/1.1 404 Not Found\r\nContent-Length:0\r\nContent-Type: text/plain\r\n\r\n")
-      end
+          :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length:#{String.length(user_agent_str)}\r\n\r\n#{user_agent_str}")
+       route == "/" ->
+          :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nContent-Type: text/plain\r\n\r\n")
+        true ->
+          :gen_tcp.send(socket, "HTTP/1.1 404 Not Found\r\nContent-Length:0\r\nContent-Type: text/plain\r\n\r\n")
     end
   end
 end
