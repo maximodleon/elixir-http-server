@@ -15,7 +15,6 @@ defmodule Server do
 
     accept_loop(socket)
 
-
     # :gen_tcp.close(client)
     # :gen_tcp.close(socket)
   end
@@ -54,6 +53,15 @@ defmodule Server do
        String.match?(route, ~r/echo/) ->
           echo_str = route |> String.split("/") |> Enum.at(2)
           :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length:#{String.length(echo_str)}\r\n\r\n#{echo_str}")
+       String.match?(route, ~r/files/) ->
+         { parsed, _, _ } = OptionParser.parse(System.argv(), switches: [directory: :string])
+
+         filename = String.split(route, "/") |> Enum.at(2)
+         dirname = Enum.at(parsed, 0) |> elem(1)
+
+         {:ok, content } = File.read( dirname <> "/" <> filename)
+
+         :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length:#{String.length(content)}\r\n\r\n#{content}")
        String.match?(route, ~r/User-Agent/i) ->
           user_agent_str =
            data_enum
