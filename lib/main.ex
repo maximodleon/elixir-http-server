@@ -39,8 +39,32 @@ defmodule Server do
     |> Enum.at(0)
     |> case do
       "GET" -> handle_GET_request(client_socket, data_enum)
+      "POST" -> handle_POST_request(client_socket, data_enum, data)
       _ -> :gen_tcp.send(client_socket, "HTTP/1.1 404 Not Found\r\n\r\n")
     end
+  end
+
+  def handle_POST_request(socket, data_enum, data) do
+    route = data_enum
+    |> Enum.at(0)
+    |> String.split(" ")
+    |> Enum.at(1)
+
+    body = data |> String.split("\r\n\r\n") |> Enum.at(1)
+
+
+    cond do
+      String.match?(route, ~r/files/) ->
+          { parsed, _, _ } = OptionParser.parse(System.argv(), switches: [directory: :string])
+          filename = String.split(route, "/") |> Enum.at(2)
+
+          dirname = Enum.at(parsed, 0) |> elem(1)
+          {:ok, file } = File.open( dirname <> "/" <> filename, [:write])
+          IO.write(file, body)
+          :gen_tcp.send(socket, "HTTP/1.1 201 Created\r\n\r\n")
+          File.close(file)
+      true -> :gen_tcp.send(socket, "HTTP/1.1 404 Not Found\r\n\r\n")
+     end
   end
 
   def handle_GET_request(socket, data_enum) do
