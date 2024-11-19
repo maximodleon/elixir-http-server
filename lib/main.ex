@@ -54,15 +54,17 @@ defmodule Server do
           echo_str = route |> String.split("/") |> Enum.at(2)
           :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length:#{String.length(echo_str)}\r\n\r\n#{echo_str}")
        String.match?(route, ~r/files/) ->
-         { parsed, _, _ } = OptionParser.parse(System.argv(), switches: [directory: :string])
+           { parsed, _, _ } = OptionParser.parse(System.argv(), switches: [directory: :string])
 
-         filename = String.split(route, "/") |> Enum.at(2)
-         dirname = Enum.at(parsed, 0) |> elem(1)
+           filename = String.split(route, "/") |> Enum.at(2)
+           dirname = Enum.at(parsed, 0) |> elem(1)
 
-         {:ok, content } = File.read( dirname <> "/" <> filename)
+            case File.read( dirname <> "/" <> filename) do
+               {:ok, content } -> :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length:#{String.length(content)}\r\n\r\n#{content}")
+              {:error, :enoent} -> :gen_tcp.send(socket, "HTTP/1.1 404 Not Found\r\nContent-Type: application/octet-stream\r\nContent-Length:0\r\n\r\n")
 
-         :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length:#{String.length(content)}\r\n\r\n#{content}")
-       String.match?(route, ~r/User-Agent/i) ->
+            end
+          String.match?(route, ~r/User-Agent/i) ->
           user_agent_str =
            data_enum
             |> Enum.slice(1..Enum.count(data_enum))
