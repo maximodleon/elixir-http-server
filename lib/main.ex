@@ -75,16 +75,23 @@ defmodule Server do
 
     content_encoding
     = data_enum
-      |> Enum.find(fn x -> String.contains?(x, "Accept-Encoding")end)
-      |> case  do
-        "Accept-Encoding: gzip" -> "\r\nContent-Encoding: gzip"
-          _ -> ""
+      |> Enum.find(fn x -> String.contains?(x, "Accept-Encoding") end)
+      |> case do
+        nil -> ""
+        "" -> ""
+        x -> x
+            |> String.split(":")
+            |> Enum.at(1)
+            |> String.split(",")
+            |> Enum.find(fn x -> String.trim(x, " ") == "gzip" end)
+            |> case  do
+              " gzip" -> "\r\nContent-Encoding: gzip"
+                _ -> ""
+            end
       end
-
     cond do
        String.match?(route, ~r/echo/) ->
           echo_str = route |> String.split("/") |> Enum.at(2)
-        IO.puts(echo_str)
           :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length:#{String.length(echo_str)}#{content_encoding}\r\n\r\n#{echo_str}")
        String.match?(route, ~r/files/) ->
            { parsed, _, _ } = OptionParser.parse(System.argv(), switches: [directory: :string])
