@@ -89,10 +89,20 @@ defmodule Server do
                 _ -> ""
             end
       end
+
     cond do
        String.match?(route, ~r/echo/) ->
-          echo_str = route |> String.split("/") |> Enum.at(2)
-          :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length:#{String.length(echo_str)}#{content_encoding}\r\n\r\n#{echo_str}")
+          echo_str = route
+          |> String.split("/")
+          |> Enum.at(2)
+
+          if (String.length(content_encoding) == 0) do
+            :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length:#{String.length(echo_str)}#{content_encoding}\r\n\r\n#{echo_str}")
+          else
+             encoded_str = :zlib.gzip(echo_str)
+            :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length:#{byte_size(encoded_str)}#{content_encoding}\r\n\r\n#{encoded_str}")
+          
+          end
        String.match?(route, ~r/files/) ->
            { parsed, _, _ } = OptionParser.parse(System.argv(), switches: [directory: :string])
 
