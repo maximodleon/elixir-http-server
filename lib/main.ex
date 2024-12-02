@@ -36,7 +36,7 @@ defmodule Server do
     |> get_request_headers(data)
     |> get_request_body(data)
 
-    handle_route(client_socket, request_data, request_data.method, request_data.path)
+    handle_route(client_socket, request_data)
   end
 
   def get_request_line(request_data) do
@@ -70,11 +70,11 @@ defmodule Server do
       %{request_map | body: body }
   end
 
-  def handle_route(socket, _request_map, "GET", "/") do
+  def handle_route(socket, %{ method: "GET", path: "/"}) do
      :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nContent-Type: text/plain\r\n\r\n")
   end
 
-  def handle_route(socket, request_map, "GET", "/echo/" <> echo_str) do
+  def handle_route(socket, %{method: "GET", path: "/echo/" <> echo_str} = request_map) do
     content_encoding =
       request_map.headers
       |> Enum.find(fn x -> String.contains?(x, "Accept-Encoding") end)
@@ -100,7 +100,7 @@ defmodule Server do
       end
   end
 
-  def handle_route(socket, _request_map, "GET", "/files/" <> filename) do
+  def handle_route(socket, %{ method: "GET", path: "/files/" <> filename}) do
      { parsed, _, _ } = OptionParser.parse(System.argv(), switches: [directory: :string])
      dirname = Enum.at(parsed, 0) |> elem(1)
 
@@ -110,11 +110,19 @@ defmodule Server do
      end
   end
 
-  def handle_route(socket, _request_map, "GET", "/User-Agent/" <> user_agent_str ) do
+  def handle_route(socket, %{ method: "GET", path: "/user-agent" } = request_map) do
+      user_agent_str =
+       request_map.headers
+       |> Enum.find(fn x -> String.contains?(x, "User-Agent") end)
+       |> String.split(":")
+       |> Enum.at(1)
+       |> String.trim
+
+
       :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length:#{String.length(user_agent_str)}\r\n\r\n#{user_agent_str}")
   end
 
-  def handle_route(socket, request_map, "POST", "/files/" <> filename ) do
+  def handle_route(socket, %{ method: "POST", path: "/files/" <> filename } = request_map) do
      { parsed, _, _ } = OptionParser.parse(System.argv(), switches: [directory: :string])
      dirname = Enum.at(parsed, 0) |> elem(1)
      {:ok, file } = File.open( dirname <> "/" <> filename, [:write])
@@ -123,7 +131,7 @@ defmodule Server do
      File.close(file)
   end
 
-  def handle_route(socket, _request_map, _method, _path) do
+  def handle_route(socket, _request_map) do
      :gen_tcp.send(socket, "HTTP/1.1 404 Not Found\r\nContent-Length:0\r\nContent-Type: text/plain\r\n\r\n")
   end
 end
