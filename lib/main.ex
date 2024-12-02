@@ -31,50 +31,52 @@ defmodule Server do
   end
 
   def handle_request(data, client_socket) do
-   data_enum = String.split(data, "\r\n")
+    request_data = data
+    |> get_request_line
+    |> get_request_headers(data)
+    |> get_request_body(data)
 
-     data_enum
-    |> Enum.at(0)
-    |> String.split(" ")
-    |> Enum.at(0)
-    |> case do
-      "GET" -> handle_GET_request(client_socket, data_enum)
-      "POST" -> handle_POST_request(client_socket, data_enum, data)
-      _ -> :gen_tcp.send(client_socket, "HTTP/1.1 404 Not Found\r\n\r\n")
-    end
+    handle_route(client_socket, request_data, request_data.method, request_data.path)
   end
 
-  def handle_POST_request(socket, data_enum, data) do
-    route = data_enum
-    |> Enum.at(0)
+  def get_request_line(request_data) do
+    [method, path, _] = request_data
+    |> String.split("\r\n")
+    |> List.first
     |> String.split(" ")
-    |> Enum.at(1)
 
-    body = data |> String.split("\r\n\r\n") |> Enum.at(1)
-
-
-    cond do
-      String.match?(route, ~r/files/) ->
-          { parsed, _, _ } = OptionParser.parse(System.argv(), switches: [directory: :string])
-          filename = String.split(route, "/") |> Enum.at(2)
-
-          dirname = Enum.at(parsed, 0) |> elem(1)
-          {:ok, file } = File.open( dirname <> "/" <> filename, [:write])
-          IO.write(file, body)
-          :gen_tcp.send(socket, "HTTP/1.1 201 Created\r\n\r\n")
-          File.close(file)
-      true -> :gen_tcp.send(socket, "HTTP/1.1 404 Not Found\r\n\r\n")
-     end
+    %{method: method, path: path, headers: [], body: ""}
   end
 
-  def handle_GET_request(socket, data_enum) do
-    route = data_enum
-    |> Enum.at(0)
-    |> String.split(" ")
-    |> Enum.at(1)
+  def get_request_headers(request_map, request_data) do
+    size = request_data
+    |> String.split("\r\n")
+    |> length
 
-    content_encoding
-    = data_enum
+    headers = request_data
+    |> String.split("\r\n")
+    |> Enum.slice(1..size - 2)
+    |> Enum.filter(fn x -> x != "" end)
+
+    %{ request_map | headers: headers }
+  end
+
+  def get_request_body(request_map, request_data) do
+    body =
+      request_data
+      |> String.split("\r\n")
+      |> List.last
+
+      %{request_map | body: body }
+  end
+
+  def handle_route(socket, _request_map, "GET", "/") do
+     :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nContent-Type: text/plain\r\n\r\n")
+  end
+
+  def handle_route(socket, request_map, "GET", "/echo/" <> echo_str) do
+    content_encoding =
+      request_map.headers
       |> Enum.find(fn x -> String.contains?(x, "Accept-Encoding") end)
       |> case do
         nil -> ""
@@ -90,45 +92,39 @@ defmodule Server do
             end
       end
 
-    cond do
-       String.match?(route, ~r/echo/) ->
-          echo_str = route
-          |> String.split("/")
-          |> Enum.at(2)
+      if (String.length(content_encoding) == 0) do
+        :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length:#{String.length(echo_str)}#{content_encoding}\r\n\r\n#{echo_str}")
+      else
+         encoded_str = :zlib.gzip(echo_str)
+        :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length:#{byte_size(encoded_str)}#{content_encoding}\r\n\r\n#{encoded_str}")
+      end
+  end
 
-          if (String.length(content_encoding) == 0) do
-            :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length:#{String.length(echo_str)}#{content_encoding}\r\n\r\n#{echo_str}")
-          else
-             encoded_str = :zlib.gzip(echo_str)
-            :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length:#{byte_size(encoded_str)}#{content_encoding}\r\n\r\n#{encoded_str}")
-          
-          end
-       String.match?(route, ~r/files/) ->
-           { parsed, _, _ } = OptionParser.parse(System.argv(), switches: [directory: :string])
+  def handle_route(socket, _request_map, "GET", "/files/" <> filename) do
+     { parsed, _, _ } = OptionParser.parse(System.argv(), switches: [directory: :string])
+     dirname = Enum.at(parsed, 0) |> elem(1)
 
-           filename = String.split(route, "/") |> Enum.at(2)
-           dirname = Enum.at(parsed, 0) |> elem(1)
+     case File.read( dirname <> "/" <> filename) do
+        {:ok, content } -> :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length:#{String.length(content)}\r\n\r\n#{content}")
+        {:error, :enoent} -> :gen_tcp.send(socket, "HTTP/1.1 404 Not Found\r\nContent-Type: application/octet-stream\r\nContent-Length:0\r\n\r\n")
+     end
+  end
 
-            case File.read( dirname <> "/" <> filename) do
-               {:ok, content } -> :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length:#{String.length(content)}\r\n\r\n#{content}")
-              {:error, :enoent} -> :gen_tcp.send(socket, "HTTP/1.1 404 Not Found\r\nContent-Type: application/octet-stream\r\nContent-Length:0\r\n\r\n")
+  def handle_route(socket, _request_map, "GET", "/User-Agent/" <> user_agent_str ) do
+      :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length:#{String.length(user_agent_str)}\r\n\r\n#{user_agent_str}")
+  end
 
-            end
-          String.match?(route, ~r/User-Agent/i) ->
-          user_agent_str =
-           data_enum
-            |> Enum.slice(1..Enum.count(data_enum))
-            |> Enum.find(fn x -> String.match?(x, ~r/User-Agent/i) end)
-            |> String.split(":")
-            |> Enum.at(1)
-            |> String.trim
+  def handle_route(socket, request_map, "POST", "/files/" <> filename ) do
+     { parsed, _, _ } = OptionParser.parse(System.argv(), switches: [directory: :string])
+     dirname = Enum.at(parsed, 0) |> elem(1)
+     {:ok, file } = File.open( dirname <> "/" <> filename, [:write])
+     IO.write(file, request_map.body)
+     :gen_tcp.send(socket, "HTTP/1.1 201 Created\r\n\r\n")
+     File.close(file)
+  end
 
-          :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length:#{String.length(user_agent_str)}\r\n\r\n#{user_agent_str}")
-       route == "/" ->
-          :gen_tcp.send(socket, "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nContent-Type: text/plain\r\n\r\n")
-        true ->
-          :gen_tcp.send(socket, "HTTP/1.1 404 Not Found\r\nContent-Length:0\r\nContent-Type: text/plain\r\n\r\n")
-    end
+  def handle_route(socket, _request_map, _method, _path) do
+     :gen_tcp.send(socket, "HTTP/1.1 404 Not Found\r\nContent-Length:0\r\nContent-Type: text/plain\r\n\r\n")
   end
 end
 
