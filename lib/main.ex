@@ -31,43 +31,23 @@ defmodule Server do
   end
 
   def handle_request(data, client_socket) do
-    request_data = data
-    |> get_request_line
-    |> get_request_headers(data)
-    |> get_request_body(data)
+
+     [top, body] =
+      data
+      |> String.split("\r\n\r\n")
+
+     [request_line | headers ] =
+       top
+       |> String.split("\r\n")
+
+      [method, path, _] =
+       request_line
+       |> String.split(" ")
+
+
+    request_data = %{method: method, path: path, headers: headers, body: body}
 
     handle_route(client_socket, request_data)
-  end
-
-  def get_request_line(request_data) do
-    [method, path, _] = request_data
-    |> String.split("\r\n")
-    |> List.first
-    |> String.split(" ")
-
-    %{method: method, path: path, headers: [], body: ""}
-  end
-
-  def get_request_headers(request_map, request_data) do
-    size = request_data
-    |> String.split("\r\n")
-    |> length
-
-    headers = request_data
-    |> String.split("\r\n")
-    |> Enum.slice(1..size - 2)
-    |> Enum.filter(fn x -> x != "" end)
-
-    %{ request_map | headers: headers }
-  end
-
-  def get_request_body(request_map, request_data) do
-    body =
-      request_data
-      |> String.split("\r\n")
-      |> List.last
-
-      %{request_map | body: body }
   end
 
   def handle_route(socket, %{ method: "GET", path: "/"}) do
